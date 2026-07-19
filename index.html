@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pulag — the trust layer for mining's orebody data</title>
+<meta name="description" content="Pulag turns messy, multi-vendor drillhole data into a validated, modelling-ready dataset — and a signable evidence pack every number traces back to.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23f2f1ec'/%3E%3Crect x='4' y='1' width='1' height='14' fill='%23996d10'/%3E%3Crect x='7' y='3' width='6' height='1' fill='%23c4c1b4'/%3E%3Crect x='7' y='7' width='6' height='1' fill='%23c4c1b4'/%3E%3Crect x='7' y='11' width='6' height='1' fill='%23c4c1b4'/%3E%3C/svg%3E">
+<style>
+  /* ---- fonts (vendored woff2, OFL — no external requests) ---- */
+  @font-face { font-family: 'Fraunces'; src: url('assets/fonts/fraunces-600.woff2') format('woff2');
+               font-weight: 600; font-style: normal; font-display: swap; }
+  @font-face { font-family: 'Fraunces'; src: url('assets/fonts/fraunces-400.woff2') format('woff2');
+               font-weight: 400; font-style: normal; font-display: swap; }
+  @font-face { font-family: 'Plex Sans'; src: url('assets/fonts/ibm-plex-sans-400.woff2') format('woff2');
+               font-weight: 400; font-style: normal; font-display: swap; }
+  @font-face { font-family: 'Plex Sans'; src: url('assets/fonts/ibm-plex-sans-600.woff2') format('woff2');
+               font-weight: 600; font-style: normal; font-display: swap; }
+  @font-face { font-family: 'Plex Mono'; src: url('assets/fonts/ibm-plex-mono-400.woff2') format('woff2');
+               font-weight: 400; font-style: normal; font-display: swap; }
+  @font-face { font-family: 'Plex Mono'; src: url('assets/fonts/ibm-plex-mono-500.woff2') format('woff2');
+               font-weight: 500; font-style: normal; font-display: swap; }
+
+  /* ---- tokens (verbatim from the app: light "cool-stone" default) ---- */
+  :root {
+    --ground: #f2f1ec; --panel: #fbfbf8; --inset: #ecebe4;
+    --ink: #201f1a; --ink-2: #63615a; --ink-3: #93908a;
+    --line: #dcdad0; --line-2: #c4c1b4;
+    --accent: #996d10; --accent-ink: #7c580c; --accent-soft: #f0e8d2;
+    --min: #bc4430; --low: #38648f; --interp: #7b57ab;
+    --ok: #47723a; --warn: #99610f; --bad: #a83323;
+    color-scheme: light;
+  }
+  /* dark "deep-umber" — via prefers-color-scheme only */
+  @media (prefers-color-scheme: dark) { :root {
+    --ground: #141311; --panel: #1c1a16; --inset: #232019;
+    --ink: #e7e1d2; --ink-2: #9d9481; --ink-3: #6d675a;
+    --line: #322e25; --line-2: #453f32;
+    --accent: #d3a03f; --accent-ink: #ddb05c; --accent-soft: #2f260f;
+    --min: #dd5e4a; --low: #6b93d1; --interp: #a37fd4;
+    --ok: #7fae6e; --warn: #cf8a3c; --bad: #de6753;
+    color-scheme: dark;
+  }}
+
+  * { box-sizing: border-box; margin: 0; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { background: var(--ground); color: var(--ink);
+    font: 15px/1.6 'Plex Sans', system-ui, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased; }
+  .mono { font-family: 'Plex Mono', ui-monospace, Consolas, monospace; }
+  .num { font-variant-numeric: tabular-nums; }
+  a { color: var(--accent-ink); text-underline-offset: 2px; }
+  ::selection { background: var(--accent-soft); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  /* ---- the horizontal ruler strip (verbatim app motif) ---- */
+  .ruler { height: 9px; background:
+      repeating-linear-gradient(90deg, var(--accent) 0 1px, transparent 1px 80px),
+      repeating-linear-gradient(90deg, var(--line-2) 0 1px, transparent 1px 8px);
+    background-size: 100% 9px, 100% 5px; background-repeat: no-repeat;
+    background-position: bottom, bottom; border-bottom: 1px solid var(--line-2);
+    background-color: var(--panel); }
+
+  /* ---- header ---- */
+  .bar { display: flex; align-items: baseline; gap: 16px;
+    padding: 16px 24px 11px; background: var(--panel);
+    max-width: 1000px; margin: 0 auto; }
+  .wordmark { font-family: 'Fraunces', Georgia, serif; font-size: 22px; font-weight: 600;
+    letter-spacing: .005em; }
+  .wordmark em { font-style: normal; color: var(--accent); }
+  .bar .grow { flex: 1; }
+  .bar .kicker { font-family: 'Plex Mono', ui-monospace, monospace; font-size: 10.5px;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); }
+  @media (max-width: 560px) { .bar .kicker { display: none; } }
+
+  /* ---- page frame: strong left margin holds the vertical depth ruler ---- */
+  .page { max-width: 1000px; margin: 0 auto; padding: 0 24px;
+    display: grid; grid-template-columns: 64px minmax(0, 720px); }
+  /* the vertical downhole depth scale: minor ticks every 8px, major every 80px */
+  .depthscale { position: relative;
+    background:
+      repeating-linear-gradient(180deg, var(--line-2) 0 1px, transparent 1px 80px),
+      repeating-linear-gradient(180deg, var(--line) 0 1px, transparent 1px 8px);
+    background-size: 9px 100%, 5px 100%; background-repeat: no-repeat;
+    background-position: left, left; }
+  .col { min-width: 0; padding: 0 0 0 30px; }
+
+  @media (max-width: 720px) {
+    .page { grid-template-columns: 1fr; padding: 0 20px; }
+    .depthscale { display: none; }
+    .col { padding-left: 0; }
+  }
+
+  /* ---- bands ---- */
+  section { padding: 64px 0; border-top: 1px solid var(--line); }
+  section:first-child { border-top: 0; }
+  .eyebrow { position: relative; font-family: 'Plex Mono', ui-monospace, monospace;
+    font-size: 10.5px; font-weight: 500; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--ink-3); margin-bottom: 18px; }
+  /* a depth-mark tick reaching back toward the ruler, tying each eyebrow to the scale */
+  .eyebrow::before { content: ""; position: absolute; top: .42em; left: -30px;
+    width: 22px; height: 1px; background: var(--line-2); }
+  .eyebrow .d { color: var(--ink-3); }
+
+  h1, h2 { font-family: 'Fraunces', Georgia, serif; font-weight: 600;
+    letter-spacing: -.012em; text-wrap: balance; }
+  h1 { font-size: clamp(30px, 5.4vw, 44px); line-height: 1.1; }
+  h2 { font-size: clamp(22px, 3.6vw, 28px); line-height: 1.18; }
+  p { max-width: 66ch; }
+  .lead-sans { color: var(--ink-2); font-size: 16.5px; margin-top: 18px; }
+
+  /* ---- hero ---- */
+  .hero p.sub { color: var(--ink-2); font-size: 17px; margin-top: 20px; }
+  /* the proof hook — the single gold element in the hero view */
+  .hook { display: inline-flex; align-items: baseline; gap: 0; flex-wrap: wrap;
+    margin-top: 26px; padding: 11px 15px; border: 1px solid var(--line-2);
+    border-left: 3px solid var(--accent); border-radius: 0 4px 4px 0;
+    background: var(--panel); font-family: 'Plex Mono', ui-monospace, monospace;
+    font-size: 15px; font-variant-numeric: tabular-nums; color: var(--ink); }
+  .hook b { color: var(--accent-ink); font-weight: 500; }
+  .hook .eq { padding: 0 .5ch; color: var(--ink-3); }
+  .hook .cap { color: var(--ink-2); font-size: 12.5px; margin-left: 1ch; }
+  .cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
+  .btn { font: 600 14px/1.2 'Plex Sans', system-ui, sans-serif; cursor: pointer;
+    border: 1px solid var(--line-2); background: var(--panel); color: var(--ink);
+    border-radius: 4px; padding: 11px 18px; text-decoration: none; display: inline-block; }
+  .btn:hover { border-color: var(--ink-3); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--panel); }
+  .btn.primary:hover { filter: brightness(1.07); border-color: var(--accent); }
+
+  /* ---- ruled sequence (three steps, not cards) ---- */
+  .seq { margin-top: 8px; border-top: 1px solid var(--line); }
+  .step { display: grid; grid-template-columns: 3.2rem 1fr; gap: 20px;
+    padding: 22px 0; border-bottom: 1px solid var(--line); }
+  .step .n { font-family: 'Plex Mono', ui-monospace, monospace; font-size: 13px;
+    font-weight: 500; color: var(--accent-ink); padding-top: .28em;
+    font-variant-numeric: tabular-nums; }
+  .step h3 { font-family: 'Fraunces', Georgia, serif; font-size: 18px; font-weight: 600;
+    margin-bottom: 5px; }
+  .step p { color: var(--ink-2); font-size: 15px; }
+  .stages { margin-top: 20px; font-family: 'Plex Mono', ui-monospace, monospace;
+    font-size: 11px; letter-spacing: .14em; color: var(--ink-3); text-transform: uppercase; }
+  .stages span { color: var(--ink-2); }
+
+  /* ---- proof table ---- */
+  .exhibit { overflow-x: auto; margin-top: 24px; border: 1px solid var(--line);
+    border-radius: 5px; background: var(--panel); }
+  table.proof { width: 100%; border-collapse: collapse;
+    font-family: 'Plex Mono', ui-monospace, Consolas, monospace;
+    font-variant-numeric: tabular-nums; font-size: 13px; }
+  table.proof th { text-align: left; font-size: 9.5px; font-weight: 500;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3);
+    padding: 12px 16px; border-bottom: 1px solid var(--line-2); white-space: nowrap; }
+  table.proof td { padding: 13px 16px; border-bottom: 1px solid var(--line);
+    vertical-align: baseline; white-space: nowrap; }
+  table.proof tr:last-child td { border-bottom: 0; }
+  table.proof .check { color: var(--ink); white-space: normal; }
+  table.proof .val { color: var(--ink); }
+  table.proof .tie { color: var(--ok); white-space: nowrap; }
+  /* the one quiet reveal: the second value settles into alignment on first view */
+  .settle { display: inline-block; animation: settle .6s cubic-bezier(.2,.7,.3,1) both; }
+  @keyframes settle { from { transform: translateX(6px); opacity: 0; } to { transform: none; opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .settle { animation: none; } }
+
+  .caption { color: var(--ink-2); font-size: 14px; margin-top: 18px; max-width: 64ch; }
+  .caption em { color: var(--ink); font-style: italic; }
+
+  /* ---- screenshot slots (real app grabs dropped in later) ---- */
+  figure { margin: 26px 0 0; }
+  figure img { display: block; width: 100%; height: auto; border: 1px solid var(--line-2);
+    border-radius: 5px; background: var(--inset); }
+  .shot-slot { border: 1px dashed var(--line-2); border-radius: 5px; background: var(--inset);
+    color: var(--ink-3); font-family: 'Plex Mono', ui-monospace, monospace; font-size: 12px;
+    padding: 40px 18px; text-align: center; }
+  figcaption { color: var(--ink-3); font-size: 12.5px; margin-top: 9px;
+    font-family: 'Plex Mono', ui-monospace, monospace; letter-spacing: .02em; }
+
+  /* ---- footer ---- */
+  footer { border-top: 1px solid var(--line); }
+  .foot-inner { max-width: 1000px; margin: 0 auto; padding: 40px 24px 30px; }
+  .foot-line { font-family: 'Fraunces', Georgia, serif; font-size: clamp(19px, 3vw, 24px);
+    font-weight: 400; letter-spacing: -.01em; max-width: 24ch; }
+  .foot-meta { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+    margin-top: 24px; color: var(--ink-3); font-family: 'Plex Mono', ui-monospace, monospace;
+    font-size: 12px; letter-spacing: .04em; }
+  .foot-meta .grow { flex: 1; }
+  .foot-meta a { color: var(--ink-2); }
+  .foot-meta .wm { font-family: 'Fraunces', Georgia, serif; font-size: 15px; color: var(--ink); }
+  .foot-meta .wm em { font-style: normal; color: var(--accent); }
+</style>
+</head>
+<body>
+
+<!-- ============ 1 · HEADER ============ -->
+<header>
+  <div class="bar">
+    <div class="wordmark">Pula<em>g</em></div>
+    <div class="grow"></div>
+    <div class="kicker">Data-trust · Orebody data</div>
+  </div>
+  <div class="ruler" aria-hidden="true"></div>
+</header>
+
+<div class="page">
+  <div class="depthscale" aria-hidden="true"></div>
+  <main class="col">
+
+    <!-- ============ 2 · HERO ============ -->
+    <section class="hero" aria-labelledby="hero-h">
+      <div class="eyebrow"><span class="d">000</span> &nbsp;·&nbsp; The trust layer for mining's orebody data</div>
+      <h1 id="hero-h">The trust layer for mining's orebody data.</h1>
+      <p class="sub">Pulag turns messy, multi-vendor drillhole data into a validated,
+        modelling-ready dataset — and a signable evidence pack every number traces back to.
+        So your data survives the moment it matters.</p>
+
+      <div class="hook" role="note" aria-label="Proof hook">
+        <b>9.34 g/t</b><span class="eq">=</span><b class="settle">9.34 g/t</b>
+        <span class="cap">— reproduced cold against a signed ASX prospectus.</span>
+      </div>
+
+      <div class="cta">
+        <a class="btn primary" href="mailto:hello@pulag.ai?subject=See%20it%20on%20our%20data">See it on your data</a>
+        <a class="btn" href="mailto:hello@pulag.ai?subject=20-minute%20walkthrough">Book a 20-minute walkthrough</a>
+      </div>
+    </section>
+
+    <!-- ============ 3 · THE PROBLEM ============ -->
+    <section aria-labelledby="prob-h">
+      <div class="eyebrow"><span class="d">012</span> &nbsp;·&nbsp; The problem</div>
+      <h2 id="prob-h">Million-dollar decisions ride on drillhole data that's trusted on a signature, not a proof.</h2>
+      <p class="lead-sans">It's scattered across incompatible vendor formats, multiple labs, and
+        decades of legacy files. At a raise, a listing, or a sale, an independent geologist has to
+        personally certify — under legal liability — that it's verified. Today that proof takes
+        weeks by hand, and everyone downstream takes it on faith.</p>
+    </section>
+
+    <!-- ============ 4 · WHAT PULAG DOES ============ -->
+    <section aria-labelledby="does-h">
+      <div class="eyebrow"><span class="d">020</span> &nbsp;·&nbsp; What Pulag does</div>
+      <h2 id="does-h">Faith becomes proof.</h2>
+      <div class="seq">
+        <div class="step">
+          <div class="n">01</div>
+          <div>
+            <h3>Ingest anything.</h3>
+            <p>Any vendor, any coordinate datum, legacy files, lab exports. One pipeline, no per-source code.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="n">02</div>
+          <div>
+            <h3>Validate &amp; flag.</h3>
+            <p>A deterministic engine repairs or flags each issue by a stated rule — no
+              black box — every problem itemised, every number traced to its source row.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="n">03</div>
+          <div>
+            <h3>Sign with confidence.</h3>
+            <p>A modelling-ready package <b>and</b> a JORC / NI 43-101 Table-1 evidence pack you can put your name to.</p>
+          </div>
+        </div>
+      </div>
+      <div class="stages" aria-hidden="true">
+        <span>Sense</span> · <span>Normalise</span> · <span>Reduce</span> · <span>Map</span> · <span>Deliver</span>
+      </div>
+
+      <!-- real app screenshot slot (SENSE preview) -->
+      <figure>
+        <div class="shot-slot" role="img" aria-label="Screenshot slot: SENSE auto-classify preview">
+          [ screenshot: SENSE auto-classify preview — drop assets/shot-sense.png ]
+        </div>
+        <!-- Replace the slot above with:
+        <img src="assets/shot-sense.png" alt="Pulag reading a raw package: each file auto-classified to a role, columns and units inferred, before anything runs.">
+        -->
+        <figcaption>The SENSE step — every file classified before anything runs.</figcaption>
+      </figure>
+    </section>
+
+    <!-- ============ 5 · PROOF, NOT PROMISES ============ -->
+    <section aria-labelledby="proof-h">
+      <div class="eyebrow"><span class="d">032</span> &nbsp;·&nbsp; Proof, not promises</div>
+      <h2 id="proof-h">Run cold — untuned — against a signed ASX prospectus and a published NI 43-101.</h2>
+
+      <div class="exhibit">
+        <table class="proof">
+          <thead>
+            <tr><th>Check</th><th>Pulag (from public raw)</th><th>Signed report</th><th></th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="check">KAL · BGRB244, 16–20 m</td>
+              <td class="val">9.34 g/t Au</td>
+              <td class="val"><span class="settle">9.34 g/t Au</span></td>
+              <td class="tie">ties to the decimal</td>
+            </tr>
+            <tr>
+              <td class="check">Fireweed · 2017–23 drilling</td>
+              <td class="val">188 holes · 47,910 m</td>
+              <td class="val">188 holes · 47,910 m</td>
+              <td class="tie">exact</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p class="caption">Two further KAL intercepts traced to a <em>different</em> assay dataset
+        than the public filing — the exact JORC Table 1 "verification of sampling and assaying"
+        question, surfaced mechanically in minutes.</p>
+
+      <!-- real app screenshot slot (honesty ledger / Table-1 pack) -->
+      <figure>
+        <div class="shot-slot" role="img" aria-label="Screenshot slot: honesty ledger / Table-1 provenance pack">
+          [ screenshot: honesty ledger or Table-1 pack — drop assets/shot-ledger.png ]
+        </div>
+        <!-- Replace the slot above with:
+        <img src="assets/shot-ledger.png" alt="Pulag's honesty ledger: every repair itemised, and a number traced back to its exact source row.">
+        -->
+        <figcaption>The evidence pack — a number traced back to its exact source row.</figcaption>
+      </figure>
+    </section>
+
+    <!-- ============ 6 · WHY NEUTRAL WINS ============ -->
+    <section aria-labelledby="neutral-h">
+      <div class="eyebrow"><span class="d">048</span> &nbsp;·&nbsp; Why neutral wins</div>
+      <h2 id="neutral-h">The neutral layer between the platforms that can't be neutral.</h2>
+      <p class="lead-sans">The platforms that store your data profit from locking it in — so they'll
+        never bridge to a competitor's format. Pulag is the neutral layer between them: no database
+        to adopt, works with what you already have.</p>
+    </section>
+
+  </main>
+</div>
+
+<!-- ============ FOOTER / CTA ============ -->
+<footer>
+  <div class="ruler" aria-hidden="true"></div>
+  <div class="foot-inner">
+    <div class="foot-line">Building the data-trust foundation for precision mining.</div>
+    <div class="foot-meta">
+      <span class="wm">Pula<em>g</em></span>
+      <a href="mailto:hello@pulag.ai">hello@pulag.ai</a>
+      <span class="grow"></span>
+      <span>Runs on your data · nothing leaves your machine</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
